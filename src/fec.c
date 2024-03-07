@@ -798,7 +798,7 @@ void Golay_20_8_init()
                 syndromeIP = syndromeI ^ (1 << (11-ip));
                 Golay_20_8_m_corr[syndromeIP][0] = i1;
                 Golay_20_8_m_corr[syndromeIP][1] = i2;
-                Golay_20_8_m_corr[syndromeIP][2] = 12 + ip;
+                Golay_20_8_m_corr[syndromeIP][2] = 8 + ip;
             }
         }
 
@@ -816,14 +816,14 @@ void Golay_20_8_init()
         {
             syndromeIP1 = syndromeI ^ (1 << (11-ip1));
             Golay_20_8_m_corr[syndromeIP1][0] = i1;
-            Golay_20_8_m_corr[syndromeIP1][1] = 12 + ip1;
+            Golay_20_8_m_corr[syndromeIP1][1] = 8 + ip1;
 
             for (ip2 = ip1+1; ip2 < 12; ip2++) // 1 more bit flip in parity
             {
                 syndromeIP2 = syndromeIP1 ^ (1 << (11-ip2));
                 Golay_20_8_m_corr[syndromeIP2][0] = i1;
-                Golay_20_8_m_corr[syndromeIP2][1] = 12 + ip1;
-                Golay_20_8_m_corr[syndromeIP2][2] = 12 + ip2;
+                Golay_20_8_m_corr[syndromeIP2][1] = 8 + ip1;
+                Golay_20_8_m_corr[syndromeIP2][2] = 8 + ip2;
             }
         }
     }
@@ -832,20 +832,20 @@ void Golay_20_8_init()
     for (ip1 = 0; ip1 < 12; ip1++) // 1 bit flip in parity
     {
         syndromeIP1 =  (1 << (11-ip1));
-        Golay_20_8_m_corr[syndromeIP1][0] = 12 + ip1;
+        Golay_20_8_m_corr[syndromeIP1][0] = 8 + ip1;
 
         for (ip2 = ip1+1; ip2 < 12; ip2++) // 1 more bit flip in parity
         {
             syndromeIP2 = syndromeIP1 ^ (1 << (11-ip2));
-            Golay_20_8_m_corr[syndromeIP2][0] = 12 + ip1;
-            Golay_20_8_m_corr[syndromeIP2][1] = 12 + ip2;
+            Golay_20_8_m_corr[syndromeIP2][0] = 8 + ip1;
+            Golay_20_8_m_corr[syndromeIP2][1] = 8 + ip2;
 
             for (ip3 = ip2+1; ip3 < 12; ip3++) // 1 more bit flip in parity
             {
                 syndromeIP3 = syndromeIP2 ^ (1 << (11-ip3));
-                Golay_20_8_m_corr[syndromeIP3][0] = 12 + ip1;
-                Golay_20_8_m_corr[syndromeIP3][1] = 12 + ip2;
-                Golay_20_8_m_corr[syndromeIP3][2] = 12 + ip3;
+                Golay_20_8_m_corr[syndromeIP3][0] = 8 + ip1;
+                Golay_20_8_m_corr[syndromeIP3][1] = 8 + ip2;
+                Golay_20_8_m_corr[syndromeIP3][2] = 8 + ip3;
             }
         }
     }
