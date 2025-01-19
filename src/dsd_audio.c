@@ -393,7 +393,7 @@ void openAudioOutDevice (dsd_opts * opts, int speed)
       exit(1);
     }
 
-    if( !(S_ISCHR(stat_buf.st_mode) || S_ISBLK(stat_buf.st_mode)))
+    if( !(S_ISCHR(stat_buf.st_mode) || S_ISBLK(stat_buf.st_mode) || S_ISFIFO(stat_buf.st_mode)))
     {
       // this is not a device
       fprintf(stderr, "Error, %s is not a device. use -w filename for wav output.\n", opts->audio_out_dev);
