@@ -149,6 +149,8 @@ void initOpts (dsd_opts * opts)
   opts->audio_out = 1;
   opts->output_channel = 0;
   opts->output_num_channels = 0;
+  opts->mc_out_buf = NULL;
+  opts->mc_out_buf_size = 0;
   opts->wav_out_file[0] = 0;
   opts->wav_out_f = NULL;
   //opts->wav_out_fd = -1;
@@ -544,8 +546,6 @@ void liveScanner (dsd_opts * opts, dsd_state * state)
 
 void freeAllocatedMemory(dsd_opts * opts, dsd_state * state)
 {
-  UNUSED_VARIABLE(opts);
-
   /* Free allocated memory */
   free(state->prev_mp_enhanced);
   free(state->prev_mp);
@@ -553,6 +553,9 @@ void freeAllocatedMemory(dsd_opts * opts, dsd_state * state)
   free(state->audio_out_float_buf);
   free(state->audio_out_buf);
   free(state->dibit_buf);
+  free(opts->mc_out_buf);
+  opts->mc_out_buf = NULL;
+  opts->mc_out_buf_size = 0;
 }
 
 void cleanupAndExit (dsd_opts * opts, dsd_state * state)
