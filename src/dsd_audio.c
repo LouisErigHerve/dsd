@@ -18,6 +18,23 @@
 #include "dsd.h"
 
 
+/*
+ * Get (or grow) the persistent multi-channel interleave buffer.
+ * Returns a zeroed buffer of at least nframes * nch shorts.
+ */
+static short * getMcBuf (dsd_opts * opts, int nframes, int nch)
+{
+  int needed = nframes * nch;
+  if (opts->mc_out_buf == NULL || opts->mc_out_buf_size < needed)
+  {
+    free (opts->mc_out_buf);
+    opts->mc_out_buf = (short *) malloc (needed * sizeof (short));
+    opts->mc_out_buf_size = needed;
+  }
+  memset (opts->mc_out_buf, 0, needed * sizeof (short));
+  return opts->mc_out_buf;
+}
+
 void processAudio (dsd_opts * opts, dsd_state * state)
 {
 
@@ -185,9 +202,8 @@ void writeSynthesizedVoice (dsd_opts * opts, dsd_state * state)
   {
     /* Multi-channel WAV: interleave mono audio into the target channel */
     int nch = opts->output_num_channels;
-    short mc_buf[160 * 16];  /* max 16 channels */
+    short *mc_buf = getMcBuf (opts, 160, nch);
     int ch_idx = opts->output_channel - 1;
-    memset (mc_buf, 0, 160 * nch * sizeof (short));
     for (n = 0; n < 160; n++)
     {
       mc_buf[n * nch + ch_idx] = aout_buf[n];
@@ -280,7 +296,7 @@ void playSynthesizedVoice (dsd_opts * opts, dsd_state * state)
           /* Multi-channel: interleave mono audio into the target channel */
           int nch = opts->output_num_channels;
           int nframes = state->audio_out_idx;
-          short *mc_buf = (short *) calloc (nframes * nch, sizeof (short));
+          short *mc_buf = getMcBuf (opts, nframes, nch);
           short *src = state->audio_out_buf_p - nframes;
           int ch_idx = opts->output_channel - 1;  /* 0-indexed */
           int i;
@@ -289,7 +305,6 @@ void playSynthesizedVoice (dsd_opts * opts, dsd_state * state)
             mc_buf[i * nch + ch_idx] = src[i];
           }
           err = Pa_WriteStream (opts->audio_out_pa_stream, mc_buf, nframes);
-          free (mc_buf);
         }
         else
         {
@@ -315,7 +330,7 @@ void playSynthesizedVoice (dsd_opts * opts, dsd_state * state)
         /* Multi-channel: interleave mono audio into the target channel for raw output */
         int nch = opts->output_num_channels;
         int nframes = state->audio_out_idx;
-        short *mc_buf = (short *) calloc (nframes * nch, sizeof (short));
+        short *mc_buf = getMcBuf (opts, nframes, nch);
         short *src = state->audio_out_buf_p - nframes;
         int ch_idx = opts->output_channel - 1;
         int i;
@@ -324,7 +339,6 @@ void playSynthesizedVoice (dsd_opts * opts, dsd_state * state)
           mc_buf[i * nch + ch_idx] = src[i];
         }
         result = write (opts->audio_out_fd, mc_buf, (nframes * nch * 2));
-        free (mc_buf);
       }
       else
       {
@@ -467,6 +481,13 @@ void openAudioOutDevice (dsd_opts * opts, int speed)
   {
     opts->audio_out_fd = fileno(stdout); //STDOUT_FILENO;
     opts->audio_out_type = 0;
+    /* Resolve multi-channel for raw output (no PA auto-detect) */
+    if (opts->output_channel > 0 && opts->output_num_channels == 0)
+    {
+      opts->output_num_channels = opts->output_channel;
+      fprintf(stderr, "Multi-channel raw output: channel %d of %d\n",
+              opts->output_channel, opts->output_num_channels);
+    }
     fprintf(stderr, "Audio Out Device: stdout\n");
     return;
   }
@@ -484,6 +505,13 @@ void openAudioOutDevice (dsd_opts * opts, int speed)
       // this is not a device
       fprintf(stderr, "Error, %s is not a device. use -w filename for wav output.\n", opts->audio_out_dev);
       exit(1);
+    }
+    /* Resolve multi-channel for raw device output (no PA auto-detect) */
+    if (opts->output_channel > 0 && opts->output_num_channels == 0)
+    {
+      opts->output_num_channels = opts->output_channel;
+      fprintf(stderr, "Multi-channel raw output: channel %d of %d\n",
+              opts->output_channel, opts->output_num_channels);
     }
 #ifdef SOLARIS
     sample_info_t aset, aget;

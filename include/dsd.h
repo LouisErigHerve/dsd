@@ -457,6 +457,8 @@ typedef struct
 
   int output_channel;       /* 0 = mono/default, 1-N = output on specific channel (1-indexed) */
   int output_num_channels;  /* total output channels, 0 = auto-detect from device */
+  short *mc_out_buf;        /* persistent multi-channel interleave buffer (heap allocated) */
+  int mc_out_buf_size;      /* size of mc_out_buf in samples */
 
   unsigned int dPMR_curr_frame_is_encrypted;
   int dPMR_next_part_of_superframe;
