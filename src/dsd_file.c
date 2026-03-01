@@ -279,7 +279,21 @@ void openWavOutFile (dsd_opts * opts, dsd_state * state)
 
   SF_INFO info;
   info.samplerate = 8000;
-  info.channels = 1;
+  if (opts->output_channel > 0 && opts->output_num_channels > 1)
+  {
+    info.channels = opts->output_num_channels;
+  }
+  else if (opts->output_channel > 0)
+  {
+    /* Channel specified but num_channels not yet resolved (no PA device opened yet).
+     * Use the channel number as minimum channel count. */
+    info.channels = opts->output_channel;
+    opts->output_num_channels = opts->output_channel;
+  }
+  else
+  {
+    info.channels = 1;
+  }
   info.format = SF_FORMAT_WAV | SF_FORMAT_PCM_16 | SF_ENDIAN_LITTLE;
   opts->wav_out_f = sf_open (opts->wav_out_file, SFM_WRITE, &info);
 

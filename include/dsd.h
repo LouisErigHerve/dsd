@@ -455,6 +455,9 @@ typedef struct
   int use_cosine_filter;
   int unmute_encrypted_p25;
 
+  int output_channel;       /* 0 = mono/default, 1-N = output on specific channel (1-indexed) */
+  int output_num_channels;  /* total output channels, 0 = auto-detect from device */
+
   unsigned int dPMR_curr_frame_is_encrypted;
   int dPMR_next_part_of_superframe;
 

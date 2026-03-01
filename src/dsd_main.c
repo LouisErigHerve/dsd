@@ -147,6 +147,8 @@ void initOpts (dsd_opts * opts)
   opts->mbe_out_f = NULL;
   opts->audio_gain = 0;
   opts->audio_out = 1;
+  opts->output_channel = 0;
+  opts->output_num_channels = 0;
   opts->wav_out_file[0] = 0;
   opts->wav_out_f = NULL;
   //opts->wav_out_fd = -1;
@@ -372,6 +374,9 @@ void usage(void)
   fprintf(stderr, "  -g <num>      Audio output gain (default = 0 = auto, disable = -1)\n");
   fprintf(stderr, "  -n            Do not send synthesized speech to audio output device\n");
   fprintf(stderr, "  -w <file>     Output synthesized speech to a .wav file\n");
+  fprintf(stderr, "  -c <num>      Output audio on channel <num> of a multi-channel device\n");
+  fprintf(stderr, "                 (1-indexed, e.g., -c 3 for channel 3)\n");
+  fprintf(stderr, "                 Device channel count is auto-detected from PortAudio\n");
   fprintf(stderr, "  -a            Display port audio devices\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "Scanner control options:\n");
@@ -700,7 +705,7 @@ int main (int argc, char **argv)
   exitflag = 0;
   signal (SIGINT, sigfun);
 
-  while ((c = getopt (argc, argv, "haep:qstv:z:i:o:d:g:nw:B:C:R:f:m:u:x:A:S:M:rlD:N:12")) != -1)
+  while ((c = getopt (argc, argv, "haep:qstv:z:i:o:d:g:nw:c:B:C:R:f:m:u:x:A:S:M:rlD:N:12")) != -1)
   {
     opterr = 0;
     switch (c)
@@ -808,6 +813,15 @@ int main (int argc, char **argv)
         opts.wav_out_file[1023] = '\0';
         fprintf(stderr, "Writing audio to file %s\n", opts.wav_out_file);
         openWavOutFile (&opts, &state);
+        break;
+      case 'c':
+        sscanf (optarg, "%d", &opts.output_channel);
+        if (opts.output_channel < 1)
+        {
+          fprintf(stderr, "Error: output channel must be >= 1\n");
+          exit(1);
+        }
+        fprintf(stderr, "Output audio on channel %d of multi-channel device\n", opts.output_channel);
         break;
       case 'B':
         sscanf (optarg, "%d", &opts.serial_baud);
