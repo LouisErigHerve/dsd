@@ -135,6 +135,7 @@ void openMbeInFile (dsd_opts * opts, dsd_state * state)
   if (opts->mbe_in_f == NULL)
   {
     fprintf(stderr, "Error: could not open %s\n", opts->mbe_in_file);
+    return;
   }
 
   // read cookie
@@ -162,14 +163,11 @@ void openMbeInFile (dsd_opts * opts, dsd_state * state)
 void closeMbeOutFile (dsd_opts * opts, dsd_state * state)
 {
 
-  char shell[255], newfilename[64], ext[5], datestr[32], new_path[1024];
+  char newfilename[128], ext[5], datestr[32], new_path[1024];
   char tgid[17];
   int sum, i, j;
   int talkgroup;
   struct tm timep;
-  int result = 0;
-
-  UNUSED_VARIABLE(result);
 
   if (opts->mbe_out_f != NULL)
   {
@@ -207,14 +205,12 @@ void closeMbeOutFile (dsd_opts * opts, dsd_state * state)
     fclose (opts->mbe_out_f);
     opts->mbe_out_f = NULL;
     strftime (datestr, 31, "%Y-%m-%d-%H%M%S", &timep);
-    sprintf(newfilename, "nac%X-%s-tg%i%s", state->nac, datestr, talkgroup, ext);
-    sprintf(new_path, "%s%s", opts->mbe_out_dir, newfilename);
-#ifdef _WIN32
-    sprintf(shell, "move %s %s", opts->mbe_out_path, new_path);
-#else
-    sprintf(shell, "mv %s %s", opts->mbe_out_path, new_path);
-#endif
-    result = system (shell);
+    snprintf(newfilename, sizeof(newfilename), "nac%X-%s-tg%i%s", state->nac, datestr, talkgroup, ext);
+    snprintf(new_path, sizeof(new_path), "%s%s", opts->mbe_out_dir, newfilename);
+    if (rename (opts->mbe_out_path, new_path) != 0)
+    {
+      fprintf(stderr, "Error: could not rename %s to %s\n", opts->mbe_out_path, new_path);
+    }
 
     state->tgcount = 0;
     for (i = 0; i < 25; i++)
@@ -244,7 +240,7 @@ void openMbeOutFile (dsd_opts * opts, dsd_state * state)
   }
 
   //  reset talkgroup id buffer
-  for (i = 0; i < 12; i++)
+  for (i = 0; i < 16; i++)
   {
     for (j = 0; j < 25; j++)
     {
@@ -263,6 +259,7 @@ void openMbeOutFile (dsd_opts * opts, dsd_state * state)
   if (opts->mbe_out_f == NULL)
   {
     fprintf(stderr, "Error, couldn't open %s\n", opts->mbe_out_path);
+    return;
   }
 
   // write magic
@@ -279,7 +276,21 @@ void openWavOutFile (dsd_opts * opts, dsd_state * state)
 
   SF_INFO info;
   info.samplerate = 8000;
-  info.channels = 1;
+  if (opts->output_channel > 0 && opts->output_num_channels > 1)
+  {
+    info.channels = opts->output_num_channels;
+  }
+  else if (opts->output_channel > 0)
+  {
+    /* Channel specified but num_channels not yet resolved (no PA device opened yet).
+     * Use the channel number as minimum channel count. */
+    info.channels = opts->output_channel;
+    opts->output_num_channels = opts->output_channel;
+  }
+  else
+  {
+    info.channels = 1;
+  }
   info.format = SF_FORMAT_WAV | SF_FORMAT_PCM_16 | SF_ENDIAN_LITTLE;
   opts->wav_out_f = sf_open (opts->wav_out_file, SFM_WRITE, &info);
 

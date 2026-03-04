@@ -18,6 +18,23 @@
 #include "dsd.h"
 
 
+/*
+ * Get (or grow) the persistent multi-channel interleave buffer.
+ * Returns a zeroed buffer of at least nframes * nch shorts.
+ */
+static short * getMcBuf (dsd_opts * opts, int nframes, int nch)
+{
+  int needed = nframes * nch;
+  if (opts->mc_out_buf == NULL || opts->mc_out_buf_size < needed)
+  {
+    free (opts->mc_out_buf);
+    opts->mc_out_buf = (short *) malloc (needed * sizeof (short));
+    opts->mc_out_buf_size = needed;
+  }
+  memset (opts->mc_out_buf, 0, needed * sizeof (short));
+  return opts->mc_out_buf;
+}
+
 void processAudio (dsd_opts * opts, dsd_state * state)
 {
 
@@ -181,7 +198,22 @@ void writeSynthesizedVoice (dsd_opts * opts, dsd_state * state)
     state->audio_out_temp_buf_p++;
   }
 
-  sf_write_short(opts->wav_out_f, aout_buf, 160);
+  if (opts->output_channel > 0 && opts->output_num_channels > 1)
+  {
+    /* Multi-channel WAV: interleave mono audio into the target channel */
+    int nch = opts->output_num_channels;
+    short *mc_buf = getMcBuf (opts, 160, nch);
+    int ch_idx = opts->output_channel - 1;
+    for (n = 0; n < 160; n++)
+    {
+      mc_buf[n * nch + ch_idx] = aout_buf[n];
+    }
+    sf_write_short (opts->wav_out_f, mc_buf, 160 * nch);
+  }
+  else
+  {
+    sf_write_short(opts->wav_out_f, aout_buf, 160);
+  }
   /*
 
   int n;
@@ -259,7 +291,25 @@ void playSynthesizedVoice (dsd_opts * opts, dsd_state * state)
           break;
 
         //fprintf(stderr, "write stream %d\n", state->audio_out_idx);
-        err = Pa_WriteStream( opts->audio_out_pa_stream, (state->audio_out_buf_p - state->audio_out_idx), state->audio_out_idx );
+        if (opts->output_channel > 0 && opts->output_num_channels > 1)
+        {
+          /* Multi-channel: interleave mono audio into the target channel */
+          int nch = opts->output_num_channels;
+          int nframes = state->audio_out_idx;
+          short *mc_buf = getMcBuf (opts, nframes, nch);
+          short *src = state->audio_out_buf_p - nframes;
+          int ch_idx = opts->output_channel - 1;  /* 0-indexed */
+          int i;
+          for (i = 0; i < nframes; i++)
+          {
+            mc_buf[i * nch + ch_idx] = src[i];
+          }
+          err = Pa_WriteStream (opts->audio_out_pa_stream, mc_buf, nframes);
+        }
+        else
+        {
+          err = Pa_WriteStream( opts->audio_out_pa_stream, (state->audio_out_buf_p - state->audio_out_idx), state->audio_out_idx );
+        }
         if( err != paNoError )
           break;
       } while(0);
@@ -274,7 +324,27 @@ void playSynthesizedVoice (dsd_opts * opts, dsd_state * state)
 #endif
     }
     else
-      result = write (opts->audio_out_fd, (state->audio_out_buf_p - state->audio_out_idx), (state->audio_out_idx * 2));
+    {
+      if (opts->output_channel > 0 && opts->output_num_channels > 1)
+      {
+        /* Multi-channel: interleave mono audio into the target channel for raw output */
+        int nch = opts->output_num_channels;
+        int nframes = state->audio_out_idx;
+        short *mc_buf = getMcBuf (opts, nframes, nch);
+        short *src = state->audio_out_buf_p - nframes;
+        int ch_idx = opts->output_channel - 1;
+        int i;
+        for (i = 0; i < nframes; i++)
+        {
+          mc_buf[i * nch + ch_idx] = src[i];
+        }
+        result = write (opts->audio_out_fd, mc_buf, (nframes * nch * 2));
+      }
+      else
+      {
+        result = write (opts->audio_out_fd, (state->audio_out_buf_p - state->audio_out_idx), (state->audio_out_idx * 2));
+      }
+    }
     state->audio_out_idx = 0;
   }
 
@@ -289,7 +359,7 @@ void playSynthesizedVoice (dsd_opts * opts, dsd_state * state)
 }
 
 #ifdef USE_PORTAUDIO
-int getPADevice(char* dev, int input, PaStream** stream)
+int getPADevice(char* dev, int input, PaStream** stream, dsd_opts * opts)
 {
 	int devnum = atoi(dev + 3);
 	fprintf(stderr, "Using portaudio device %d.\n", devnum);
@@ -308,7 +378,7 @@ int getPADevice(char* dev, int input, PaStream** stream)
         fprintf(stderr,  "ERROR: Requested device %d is larger than number of devices.\n", devnum );
         return(1);
     }
-	
+
 	const   PaDeviceInfo *deviceInfo = Pa_GetDeviceInfo( devnum );
 
     /* print device name */
@@ -332,13 +402,43 @@ int getPADevice(char* dev, int input, PaStream** stream)
 		return(1);
 	}
 
+	/* Determine output channel count */
+	int num_channels = 1;  /* mono by default */
+	if ((input == 0) && (opts->output_channel > 0))
+	{
+		if (opts->output_num_channels > 0)
+		{
+			num_channels = opts->output_num_channels;
+		}
+		else
+		{
+			num_channels = deviceInfo->maxOutputChannels;
+		}
+
+		if (opts->output_channel > num_channels)
+		{
+			fprintf(stderr, "ERROR: Requested channel %d but device only has %d output channels.\n",
+			        opts->output_channel, num_channels);
+			return(1);
+		}
+
+		fprintf(stderr, "Multi-channel output: channel %d of %d\n",
+		        opts->output_channel, num_channels);
+	}
+
 	//Create stream parameters
 	PaStreamParameters parameters;
     parameters.device = devnum;
-    parameters.channelCount = 1;       /* mono */
+    parameters.channelCount = num_channels;
     parameters.sampleFormat = paInt16; //Shorts
     parameters.suggestedLatency = (input == 1) ? PA_LATENCY_IN : PA_LATENCY_OUT;
     parameters.hostApiSpecificStreamInfo = NULL;
+
+	/* Store the actual channel count for use during playback */
+	if (input == 0)
+	{
+		opts->output_num_channels = num_channels;
+	}
 
 	//Open stream
 	err = Pa_OpenStream(
@@ -369,7 +469,7 @@ void openAudioOutDevice (dsd_opts * opts, int speed)
   {
     opts->audio_out_type = 2;
 #ifdef USE_PORTAUDIO
-    int err = getPADevice(opts->audio_out_dev, 0, &opts->audio_out_pa_stream);
+    int err = getPADevice(opts->audio_out_dev, 0, &opts->audio_out_pa_stream, opts);
     if(err != 0)
       exit(err);
 #else
@@ -381,6 +481,13 @@ void openAudioOutDevice (dsd_opts * opts, int speed)
   {
     opts->audio_out_fd = fileno(stdout); //STDOUT_FILENO;
     opts->audio_out_type = 0;
+    /* Resolve multi-channel for raw output (no PA auto-detect) */
+    if (opts->output_channel > 0 && opts->output_num_channels == 0)
+    {
+      opts->output_num_channels = opts->output_channel;
+      fprintf(stderr, "Multi-channel raw output: channel %d of %d\n",
+              opts->output_channel, opts->output_num_channels);
+    }
     fprintf(stderr, "Audio Out Device: stdout\n");
     return;
   }
@@ -398,6 +505,13 @@ void openAudioOutDevice (dsd_opts * opts, int speed)
       // this is not a device
       fprintf(stderr, "Error, %s is not a device. use -w filename for wav output.\n", opts->audio_out_dev);
       exit(1);
+    }
+    /* Resolve multi-channel for raw device output (no PA auto-detect) */
+    if (opts->output_channel > 0 && opts->output_num_channels == 0)
+    {
+      opts->output_num_channels = opts->output_channel;
+      fprintf(stderr, "Multi-channel raw output: channel %d of %d\n",
+              opts->output_channel, opts->output_num_channels);
     }
 #ifdef SOLARIS
     sample_info_t aset, aget;
@@ -505,13 +619,13 @@ void openAudioInDevice (dsd_opts * opts)
   {
     opts->audio_in_type = 2;
 #ifdef USE_PORTAUDIO
-    int err = getPADevice(opts->audio_in_dev, 1, &opts->audio_in_pa_stream);
+    int err = getPADevice(opts->audio_in_dev, 1, &opts->audio_in_pa_stream, opts);
     if(err != 0)
       exit(err);
 
     if (opts->split == 0)
     {
-      int err = getPADevice(opts->audio_in_dev, 0, &opts->audio_out_pa_stream);
+      int err = getPADevice(opts->audio_in_dev, 0, &opts->audio_out_pa_stream, opts);
       if(err != 0)
         exit(err);
     }

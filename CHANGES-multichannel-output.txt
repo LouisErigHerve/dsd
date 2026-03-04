@@ -1,0 +1,99 @@
+DSD Multi-Channel Output Feature (-c option)
+=============================================
+
+Overview
+--------
+Adds a new -c command-line option to DSD that allows outputting decoded audio
+on a specific channel of a multi-channel audio device (e.g., BlackHole 16ch).
+This enables running multiple DSD instances on the same output device with
+each instance on a different channel, preventing audio overlap.
+
+Usage
+-----
+  dsd -i pa:<input_dev> -o pa:<output_dev> -c <channel_number> [other options]
+
+  -c <num>   Output audio on channel <num> of a multi-channel device (1-indexed)
+             Device channel count is auto-detected from PortAudio.
+
+Example (two SDRs → BlackHole 16ch, separate channels):
+  dsd -i pa:2 -o pa:4 -c 1 -fr    # Calloway Sheriff → channel 1
+  dsd -i pa:3 -o pa:4 -c 3 -fr    # Murray Police → channel 3
+
+When -c is NOT specified, behavior is unchanged (mono output, exactly as before).
+
+Files Modified
+--------------
+
+1. include/dsd.h (lines ~457-458)
+   - Added two fields to dsd_opts struct:
+     * int output_channel;       (0 = mono/default, 1-N = specific channel, 1-indexed)
+     * int output_num_channels;  (total output channels, 0 = auto-detect from device)
+
+2. src/dsd_main.c
+   - initOpts(): Initialize output_channel=0, output_num_channels=0
+   - usage(): Added help text for -c option
+   - getopt string: Added 'c:' to option string
+   - Added case 'c': parses channel number, validates >= 1
+
+3. src/dsd_audio.c
+   - getPADevice(): Signature changed to accept dsd_opts* parameter.
+     When output_channel > 0 and opening an output device:
+     * Auto-detects device maxOutputChannels from PortAudio
+     * Opens stream with full device channel count (not just mono)
+     * Validates requested channel doesn't exceed device capabilities
+     * Stores resolved output_num_channels back into opts
+   - All 3 call sites updated to pass opts parameter.
+
+   - playSynthesizedVoice() [PortAudio path]:
+     When multi-channel, allocates interleaved buffer via calloc(),
+     places mono samples at the target channel position (0-indexed),
+     silence on all other channels, writes via Pa_WriteStream, frees buffer.
+     When mono (default), behavior unchanged.
+
+   - playSynthesizedVoice() [raw device/stdout path]:
+     Same interleaving logic for write() calls.
+
+   - writeSynthesizedVoice() [WAV file output]:
+     When multi-channel, creates a stack-allocated interleaved buffer
+     (max 160 * 16 channels), places 160 mono samples at target channel,
+     writes via sf_write_short. When mono, behavior unchanged.
+
+4. src/dsd_file.c
+   - openWavOutFile(): Sets info.channels based on output_num_channels
+     when -c is specified. Falls back to using output_channel value as
+     minimum channel count if PortAudio hasn't resolved the total yet.
+
+How It Works (Interleaving)
+---------------------------
+For a 16-channel device with -c 3, each mono sample becomes a 16-sample frame:
+  [0, 0, sample, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+           ^-- channel 3 (0-indexed position 2)
+
+This is standard interleaved PCM as expected by PortAudio, WAV files, and
+raw PCM consumers.
+
+Testing Notes
+-------------
+- Build requires: libsndfile, mbelib, itpp, and optionally portaudio
+- Build with cmake: mkdir build && cd build && cmake .. && make
+- PortAudio MUST be found by cmake for -c to work (USE_PORTAUDIO define)
+- Without -c flag, all behavior is identical to unpatched DSD
+
+Test cases:
+1. No -c flag: verify mono output works exactly as before (regression test)
+2. -c 1 with BlackHole 16ch: verify audio appears on channel 1 only
+3. -c 3 with BlackHole 16ch: verify audio appears on channel 3 only
+4. -c 17 with BlackHole 16ch: should error "Requested channel 17 but device only has 16"
+5. -c 0: should error "output channel must be >= 1"
+6. Two DSD instances with -c 1 and -c 3 on same device: verify no overlap
+7. -w output.wav -c 3: verify WAV file has correct multi-channel format
+8. BUTT picks up correct channel pair from BlackHole 16ch
+
+Known Limitations
+-----------------
+- Maximum 16 channels for WAV output (stack buffer in writeSynthesizedVoice)
+- PortAudio output uses calloc/free per write call (could be optimized with
+  a persistent buffer if performance is a concern)
+- Raw device output (-o /dev/audio) with -c requires the device to support
+  multi-channel; channel count must be set via output_num_channels since
+  there's no auto-detection for raw devices
